@@ -42,19 +42,67 @@ The desktop backend will prefer the repo-local checkout at `.\Wan2GP`.
 
 ### 2. Wan2GP already installed elsewhere
 
-If you already have a working Wan2GP checkout and want LTX Desktop to reuse it, do not keep a local `.\Wan2GP` subfolder in this repo. Install only the LTX Desktop dependencies, then point `WANGP_ROOT` to the existing Wan2GP folder before starting the app.
+If you already have a working Wan2GP checkout and want LTX Desktop to reuse it, do not keep a local `.\Wan2GP` subfolder in this repo.
+
+`WANGP_ROOT` is an environment variable that must point to the root folder of your existing Wan2GP checkout, meaning the folder that contains `wgp.py`.
+
+Examples:
+
+- Windows `cmd.exe`:
+
+```bat
+set WANGP_ROOT=D:\Wan2GP
+```
+
+- Windows PowerShell:
+
+```powershell
+$env:WANGP_ROOT = "D:\Wan2GP"
+```
+
+- Linux / macOS (`bash`, `zsh`):
 
 ```bash
+export WANGP_ROOT=/opt/Wan2GP
+```
+
+Set `WANGP_ROOT` before running setup. `pnpm setup:dev:win` will then reuse that checkout and install its `requirements.txt` into the LTX Desktop backend venv.
+
+```bash
+set WANGP_ROOT=D:\Wan2GP
+pnpm setup:dev:win
+pnpm dev
+```
+
+If you prefer the manual path instead of `pnpm setup:dev:win`, install the external Wan2GP requirements into the backend venv yourself after `uv sync`:
+
+```bash
+set WANGP_ROOT=D:\Wan2GP
 pnpm install
 cd backend
 uv sync --extra dev
+uv pip install --python .venv\Scripts\python.exe -r %WANGP_ROOT%\requirements.txt
 cd ..
 pnpm dev
 ```
 
-Set `WANGP_ROOT` to your existing Wan2GP folder before `pnpm dev`.
+The backend still runs in LTX Desktop's own `backend/.venv` unless you explicitly override it with `LTX_BACKEND_PYTHON`.
 
 If both are present, LTX Desktop uses the local `.\Wan2GP` checkout first and falls back to `WANGP_ROOT` only when no local subfolder is available.
+
+If you want `WANGP_ROOT` to persist across new Windows terminals, you can set it permanently with:
+
+- `cmd.exe`:
+
+```bat
+setx WANGP_ROOT D:\Wan2GP
+```
+
+- PowerShell:
+
+```powershell
+[Environment]::SetEnvironmentVariable("WANGP_ROOT", "D:\Wan2GP", "User")
+```
 
 <p align="center">
   <img src="images/gen-space.png" alt="Gen Space" width="70%">
@@ -195,7 +243,7 @@ pnpm setup:dev:mac
 pnpm setup:dev:win
 ```
 
-On Windows, `pnpm setup:dev:win` also clones `https://github.com/deepbeepmeep/Wan2GP` into the repo subfolder `Wan2GP/` and installs its Python dependencies into the backend venv so the desktop app can use the WanGP engine directly. That checkout remains usable on its own if you want to run Wan2GP from the subfolder.
+On Windows, `pnpm setup:dev:win` installs Wan2GP Python dependencies into the backend venv used by LTX Desktop. By default it clones `https://github.com/deepbeepmeep/Wan2GP` into the repo subfolder `Wan2GP/`, but if no local subfolder exists and `WANGP_ROOT` points to an existing checkout, it reuses that checkout instead. A repo-local `Wan2GP/` remains directly usable on its own if you want to run Wan2GP from the subfolder.
 
 Run:
 
