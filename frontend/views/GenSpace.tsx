@@ -244,7 +244,7 @@ function SettingsDropdown({
       {isOpen && (
         <div className="absolute bottom-full left-0 mb-2 bg-zinc-800 border border-zinc-700 rounded-md p-2 min-w-[160px] shadow-xl z-[9999]">
           <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2">{title}</div>
-          <div className="space-y-1">
+          <div className="space-y-1 max-h-[50vh] overflow-y-auto">
             {options.map(option => (
               <div key={option.value} className="relative group/option">
                 <button
@@ -529,8 +529,8 @@ function PromptBar({
         </div>
       )}
 
-      {/* Image assets panel — image mode with reference support */}
-      {wangpRemoteEnabled && mode === 'image' && !isRetake && selectedImageModel?.capabilities?.supports_reference && onAddAsset && onRemoveAsset && onRenameAsset && onChangeAssetRole && (
+      {/* Image assets panel — image mode (i2i via start_frame, plus reference roles if model supports them) */}
+      {wangpRemoteEnabled && mode === 'image' && !isRetake && onAddAsset && onRemoveAsset && onRenameAsset && onChangeAssetRole && (
         <div className="px-2 pt-2">
           <ImageAssetsPanel
             assets={imageAssets}
@@ -1333,7 +1333,7 @@ export function GenSpace() {
     } : {}
 
     if (mode === 'image') {
-      const imageAssets = wangpRemoteEnabled && selectedImageModel?.capabilities?.supports_reference
+      const imageAssets = wangpRemoteEnabled
         ? imageAssetsHook.assets
         : undefined
 
