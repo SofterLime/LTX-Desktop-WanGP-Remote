@@ -703,7 +703,7 @@ class VideoGenerationHandler(StateHandlerBase):
             if req.lorasMultipliers:
                 settings["loras_multipliers"] = req.lorasMultipliers
             if req.profileId:
-                settings["override_profile"] = req.profileId
+                settings["override_profile"] = -1 if req.profileId == "default" else int(req.profileId)
             if req.modelParams:
                 for k, v in req.modelParams.items():
                     settings[k] = v
