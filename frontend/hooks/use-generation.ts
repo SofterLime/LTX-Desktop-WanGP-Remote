@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react'
 import type { GenerationSettings } from '../components/SettingsPanel'
+import type { ImageAsset } from '../types/image-assets'
 import { backendFetch } from '../lib/backend'
 import { useAppSettings } from '../contexts/AppSettingsContext'
 
@@ -25,7 +26,7 @@ interface GenerationProgress {
 }
 
 interface UseGenerationReturn extends GenerationState {
-  generate: (prompt: string, imagePath: string | null, settings: GenerationSettings, audioPath?: string | null) => Promise<void>
+  generate: (prompt: string, imagePath: string | null, settings: GenerationSettings, audioPath?: string | null, imageAssets?: ImageAsset[]) => Promise<void>
   generateImage: (prompt: string, settings: GenerationSettings) => Promise<void>
   cancel: () => void
   reset: () => void
@@ -121,6 +122,7 @@ export function useGeneration(): UseGenerationReturn {
     imagePath: string | null,
     settings: GenerationSettings,
     audioPath?: string | null,
+    imageAssets?: ImageAsset[],
   ) => {
     const statusMsg = settings.model === 'pro'
       ? 'Loading Pro model & generating...'
@@ -155,11 +157,21 @@ export function useGeneration(): UseGenerationReturn {
         cameraMotion: settings.cameraMotion,
         aspectRatio: settings.aspectRatio || '16:9',
       }
+      if (settings.videoModelType) {
+        body.videoModelType = settings.videoModelType
+      }
       if (imagePath) {
         body.imagePath = imagePath
       }
       if (audioPath) {
         body.audioPath = audioPath
+      }
+      if (imageAssets && imageAssets.length > 0) {
+        body.imageAssets = imageAssets.map((a) => ({
+          name: a.name,
+          role: a.role,
+          path: a.filePath,
+        }))
       }
 
       // Poll for real progress from backend with time-based interpolation
@@ -387,16 +399,21 @@ export function useGeneration(): UseGenerationReturn {
       
       progressInterval = setInterval(pollProgress, 500)
 
+      const imageBody: Record<string, unknown> = {
+        prompt: finalPrompt,
+        width: dims.width,
+        height: dims.height,
+        numSteps,
+        numImages,
+      }
+      if (settings.imageModelType) {
+        imageBody.imageModelType = settings.imageModelType
+      }
+
       const response = await backendFetch('/api/generate-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: finalPrompt,
-          width: dims.width,
-          height: dims.height,
-          numSteps,
-          numImages,
-        }),
+        body: JSON.stringify(imageBody),
         signal: abortControllerRef.current.signal,
       })
 

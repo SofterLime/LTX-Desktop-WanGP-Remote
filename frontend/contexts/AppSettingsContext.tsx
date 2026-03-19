@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { backendFetch, resetBackendCredentials } from '../lib/backend'
 
 export interface InferenceSettings {
@@ -60,8 +60,10 @@ interface AppSettingsContextValue {
   saveFalApiKey: (value: string) => Promise<void>
   saveGeminiApiKey: (value: string) => Promise<void>
   saveWangpRemoteKey: (value: string) => Promise<void>
+  reconnectWangpRemote: () => Promise<void>
   forceApiGenerations: boolean
   shouldVideoGenerateWithLtxApi: boolean
+  wangpRemoteEnabled: boolean
 }
 
 const AppSettingsContext = createContext<AppSettingsContextValue | null>(null)
@@ -213,8 +215,19 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
     }
   }, [backendProcessStatus, isLoaded, refreshSettings])
 
+  const reconnectWangpRemote = useCallback(async () => {
+    const response = await backendFetch('/api/reconnect-wangp-remote', { method: 'POST' })
+    if (!response.ok) {
+      const detail = await response.text()
+      throw new Error(detail || 'Failed to reconnect WanGP remote client.')
+    }
+  }, [])
+
+  const prevWangpUrlRef = useRef(settings.wangpRemoteUrl)
   useEffect(() => {
     if (!isLoaded || backendProcessStatus !== 'alive') return
+    const urlChanged = settings.wangpRemoteUrl !== prevWangpUrlRef.current
+    prevWangpUrlRef.current = settings.wangpRemoteUrl
     const syncTimer = setTimeout(async () => {
       try {
         const { hasLtxApiKey: _a, hasFalApiKey: _b, hasGeminiApiKey: _c, hasWangpRemoteKey: _d, ...syncPayload } = settings
@@ -223,12 +236,15 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(syncPayload),
         })
+        if (urlChanged) {
+          await reconnectWangpRemote()
+        }
       } catch {
         // Best-effort settings sync.
       }
     }, 150)
     return () => clearTimeout(syncTimer)
-  }, [backendProcessStatus, isLoaded, settings])
+  }, [backendProcessStatus, isLoaded, reconnectWangpRemote, settings])
 
   const updateSettings = useCallback((patch: Partial<AppSettings> | ((prev: AppSettings) => AppSettings)) => {
     if (typeof patch === 'function') {
@@ -287,11 +303,14 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
       const detail = await response.text()
       throw new Error(detail || 'Failed to save WanGP remote API key.')
     }
+    await backendFetch('/api/reconnect-wangp-remote', { method: 'POST' })
     await refreshSettings()
   }, [refreshSettings])
 
   const shouldVideoGenerateWithLtxApi =
     forceApiGenerations || (settings.userPrefersLtxApiVideoGenerations && settings.hasLtxApiKey)
+
+  const wangpRemoteEnabled = !!settings.wangpRemoteUrl
 
   const contextValue = useMemo<AppSettingsContextValue>(
     () => ({
@@ -304,10 +323,12 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
       saveFalApiKey,
       saveGeminiApiKey,
       saveWangpRemoteKey,
+      reconnectWangpRemote,
       forceApiGenerations,
       shouldVideoGenerateWithLtxApi,
+      wangpRemoteEnabled,
     }),
-    [forceApiGenerations, isLoaded, refreshSettings, runtimePolicyLoaded, saveFalApiKey, saveGeminiApiKey, saveLtxApiKey, saveWangpRemoteKey, settings, shouldVideoGenerateWithLtxApi, updateSettings],
+    [forceApiGenerations, isLoaded, reconnectWangpRemote, refreshSettings, runtimePolicyLoaded, saveFalApiKey, saveGeminiApiKey, saveLtxApiKey, saveWangpRemoteKey, settings, shouldVideoGenerateWithLtxApi, updateSettings, wangpRemoteEnabled],
   )
 
   return <AppSettingsContext.Provider value={contextValue}>{children}</AppSettingsContext.Provider>

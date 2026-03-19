@@ -52,6 +52,12 @@ export function LaunchGate({
   const [availableSpace, setAvailableSpace] = useState('...')
   const [videoPath, setVideoPath] = useState('/splash/splash.mp4')
   const [ltxApiKey, setLtxApiKey] = useState('')
+  const [wangpRemoteUrl, setWangpRemoteUrl] = useState('')
+  const [wangpRemoteKey, setWangpRemoteKey] = useState('')
+  const [wangpConnectionTest, setWangpConnectionTest] = useState<{
+    status: 'idle' | 'testing' | 'success' | 'error'
+    message?: string
+  }>({ status: 'idle' })
   const [licenseAccepted, setLicenseAccepted] = useState(false)
   const [licenseText, setLicenseText] = useState<string | null>(null)
   const [licenseError, setLicenseError] = useState<string | null>(null)
@@ -189,6 +195,24 @@ export function LaunchGate({
           })
         } catch (e) {
           logger.error(`Failed to save API key: ${e}`)
+        }
+      }
+
+      // Save WanGP remote settings if provided, then reconnect so the
+      // backend httpx client picks up the new URL/key immediately.
+      if (wangpRemoteUrl.trim() || wangpRemoteKey.trim()) {
+        try {
+          const wangpPayload: Record<string, string> = {}
+          if (wangpRemoteUrl.trim()) wangpPayload.wangpRemoteUrl = wangpRemoteUrl.trim()
+          if (wangpRemoteKey.trim()) wangpPayload.wangpRemoteKey = wangpRemoteKey.trim()
+          await backendFetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(wangpPayload),
+          })
+          await backendFetch('/api/reconnect-wangp-remote', { method: 'POST' })
+        } catch (e) {
+          logger.error(`Failed to save WanGP remote settings: ${e}`)
         }
       }
 
@@ -445,7 +469,7 @@ export function LaunchGate({
 
           {/* Step 2: Choose Location */}
           {currentStep === 'location' && (
-            <div style={{ animation: 'fadeIn 0.25s ease' }}>
+            <div style={{ animation: 'fadeIn 0.25s ease', overflowY: 'auto', flex: 1 }}>
               <h2 style={{
                 fontFamily: "'Miriam Libre', serif",
                 fontSize: 24,
@@ -559,6 +583,125 @@ export function LaunchGate({
                     'The API provides faster text encoding (~1s vs 23s local).'
                   )}
                 </p>
+              </div>
+
+              {/* Remote WanGP Server */}
+              <div style={{
+                marginTop: 24,
+                background: '#2e3445',
+                borderRadius: 12,
+                padding: '14px 18px'
+              }}>
+                <div style={{ marginBottom: 8 }}>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: '#ffffff' }}>
+                    Remote WanGP Server
+                    <span style={{
+                      fontSize: 11,
+                      color: '#f97316',
+                      marginLeft: 8,
+                      fontWeight: 400
+                    }}>
+                      Optional - Offload to remote GPU
+                    </span>
+                  </label>
+                </div>
+                <p style={{ fontSize: 11, color: '#888', marginBottom: 10 }}>
+                  Connect to a remote GPU server running the Wan2GP REST API for video and image generation.
+                </p>
+
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    value={wangpRemoteUrl}
+                    onChange={(e) => {
+                      setWangpRemoteUrl(e.target.value)
+                      setWangpConnectionTest({ status: 'idle' })
+                    }}
+                    placeholder="http://192.168.1.50:8100"
+                    style={{
+                      flex: 1,
+                      background: '#1a1a1a',
+                      border: `1px solid ${wangpConnectionTest.status === 'success' ? '#22c55e' : wangpConnectionTest.status === 'error' ? '#f87171' : '#333'}`,
+                      borderRadius: 8,
+                      padding: '12px 14px',
+                      color: '#ffffff',
+                      fontSize: 13,
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                  <button
+                    onClick={async () => {
+                      const url = wangpRemoteUrl.trim()
+                      if (!url) {
+                        setWangpConnectionTest({ status: 'error', message: 'Enter a URL first' })
+                        return
+                      }
+                      setWangpConnectionTest({ status: 'testing' })
+                      try {
+                        const response = await backendFetch('/api/test-wangp-connection', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ url, key: wangpRemoteKey }),
+                        })
+                        const data = await response.json()
+                        if (data.success) {
+                          setWangpConnectionTest({ status: 'success', message: 'Connected' })
+                        } else {
+                          setWangpConnectionTest({ status: 'error', message: data.error || 'Connection failed' })
+                        }
+                      } catch (err) {
+                        setWangpConnectionTest({ status: 'error', message: String(err) })
+                      }
+                    }}
+                    disabled={wangpConnectionTest.status === 'testing'}
+                    style={{
+                      padding: '10px 20px',
+                      borderRadius: 9999,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: wangpConnectionTest.status === 'testing' ? 'not-allowed' : 'pointer',
+                      background: 'transparent',
+                      border: '1px solid #444',
+                      color: '#ffffff',
+                      transition: 'all 0.2s ease',
+                      opacity: wangpConnectionTest.status === 'testing' ? 0.6 : 1,
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {wangpConnectionTest.status === 'testing' ? 'Testing...' : 'Test'}
+                  </button>
+                </div>
+
+                {wangpConnectionTest.status !== 'idle' && wangpConnectionTest.status !== 'testing' && (
+                  <p style={{
+                    fontSize: 11,
+                    marginTop: 6,
+                    color: wangpConnectionTest.status === 'success' ? '#22c55e' : '#f87171'
+                  }}>
+                    {wangpConnectionTest.status === 'success' ? '✓ ' : ''}{wangpConnectionTest.message}
+                  </p>
+                )}
+
+                <div style={{ marginTop: 10 }}>
+                  <label style={{ fontSize: 12, color: '#a0a0a0' }}>API Key</label>
+                  <input
+                    type="password"
+                    value={wangpRemoteKey}
+                    onChange={(e) => setWangpRemoteKey(e.target.value)}
+                    placeholder="Enter remote server API key..."
+                    style={{
+                      width: '100%',
+                      marginTop: 4,
+                      background: '#1a1a1a',
+                      border: '1px solid #333',
+                      borderRadius: 8,
+                      padding: '12px 14px',
+                      color: '#ffffff',
+                      fontSize: 13,
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
               </div>
             </div>
           )}

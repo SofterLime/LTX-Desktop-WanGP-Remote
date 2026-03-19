@@ -149,6 +149,7 @@ class ImageGenerationHandler(StateHandlerBase):
             self._generation.start_api_generation(generation_id)
 
             settings: dict[str, object] = {
+                "model_type": req.imageModelType or self._config.wangp_image_model_type,
                 "prompt": req.prompt,
                 "resolution": f"{width}x{height}",
                 "num_inference_steps": req.numSteps,

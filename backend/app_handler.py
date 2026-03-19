@@ -104,6 +104,7 @@ class AppHandler:
             )
 
         self._lock = threading.RLock()
+        self._remote_client_lock = threading.Lock()
 
         self.state = AppState(
             available_files={
@@ -242,6 +243,29 @@ class AppHandler:
 
         self.downloads.cleanup_downloading_dir()
         self.models.refresh_available_files()
+
+    def reconnect_remote_wangp(self) -> None:
+        """Recreate the RemoteWanGPClient from current app_settings URL/key."""
+        with self._remote_client_lock:
+            url = self.state.app_settings.wangp_remote_url.strip()
+            key = self.state.app_settings.wangp_remote_key.strip()
+
+            old = self.remote_wangp_client
+            if old is not None:
+                old.close()
+
+            if url:
+                client = RemoteWanGPClient(
+                    base_url=url,
+                    api_key=key,
+                    output_dir=self.config.outputs_dir,
+                )
+            else:
+                client = None
+
+            self.remote_wangp_client = client
+            self.video_generation._remote_wangp_client = client
+            self.image_generation._remote_wangp_client = client
 
 
 @dataclass

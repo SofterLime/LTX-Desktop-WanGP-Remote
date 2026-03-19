@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'react'
 import { Sparkles, Trash2, Square, ImageIcon, ArrowLeft, Scissors } from 'lucide-react'
 import { logger } from '../lib/logger'
 import { ImageUploader } from '../components/ImageUploader'
+import { ImageAssetsPanel } from '../components/ImageAssetsPanel'
+import { useImageAssets } from '../hooks/use-image-assets'
 import { AudioUploader } from '../components/AudioUploader'
 import { VideoPlayer } from '../components/VideoPlayer'
 import { ImageResult } from '../components/ImageResult'
@@ -10,8 +12,10 @@ import { ModeTabs, type GenerationMode } from '../components/ModeTabs'
 import { LtxLogo } from '../components/LtxLogo'
 import { ModelStatusDropdown } from '../components/ModelStatusDropdown'
 import { Textarea } from '../components/ui/textarea'
+import { PromptTextarea } from '../components/PromptTextarea'
 import { Button } from '../components/ui/button'
 import { useGeneration } from '../hooks/use-generation'
+import { useAvailableModels } from '../hooks/use-available-models'
 import { useRetake } from '../hooks/use-retake'
 import { useBackend } from '../hooks/use-backend'
 import { useProjects } from '../contexts/ProjectContext'
@@ -36,7 +40,7 @@ const DEFAULT_SETTINGS: GenerationSettings = {
 
 export function Playground() {
   const { goHome } = useProjects()
-  const { forceApiGenerations, shouldVideoGenerateWithLtxApi } = useAppSettings()
+  const { forceApiGenerations, shouldVideoGenerateWithLtxApi, wangpRemoteEnabled } = useAppSettings()
   const [mode, setMode] = useState<GenerationMode>('text-to-video')
   const [prompt, setPrompt] = useState('')
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
@@ -44,11 +48,28 @@ export function Playground() {
   const [settings, setSettings] = useState<GenerationSettings>(() => ({ ...DEFAULT_SETTINGS }))
 
   const { status, processStatus } = useBackend()
+  const { models: availableModels } = useAvailableModels()
+  const imageAssetsHook = useImageAssets()
+
+  const selectedVideoModel = availableModels.video_models.find(
+    (m) => m.model_type === settings.videoModelType
+  ) ?? availableModels.video_models[0] ?? null
 
   useEffect(() => {
     if (!shouldVideoGenerateWithLtxApi || mode === 'text-to-image') return
     setSettings((prev) => sanitizeForcedApiVideoSettings({ ...prev, model: 'fast' }))
   }, [mode, shouldVideoGenerateWithLtxApi])
+
+  useEffect(() => {
+    if (wangpRemoteEnabled || mode === 'text-to-image') return
+    const localResolutions = new Set(['1080p', '720p', '540p'])
+    setSettings((prev) => {
+      if (!localResolutions.has(prev.videoResolution)) {
+        return { ...prev, videoResolution: '1080p' }
+      }
+      return prev
+    })
+  }, [wangpRemoteEnabled, mode])
 
   // Force pro model + resolution when audio is attached (A2V only supports pro @ 1080p 16:9)
   useEffect(() => {
@@ -128,7 +149,8 @@ export function Playground() {
       const imagePath = selectedImage ? fileUrlToPath(selectedImage) : null
       const audioPath = selectedAudio ? fileUrlToPath(selectedAudio) : null
       if (audioPath) effectiveVideoSettings.model = 'pro'
-      generate(prompt, imagePath, effectiveVideoSettings, audioPath)
+      const assets = wangpRemoteEnabled ? imageAssetsHook.assets : undefined
+      generate(prompt, imagePath, effectiveVideoSettings, audioPath, assets)
     }
   }
   
@@ -149,6 +171,7 @@ export function Playground() {
     setPrompt('')
     setSelectedImage(null)
     setSelectedAudio(null)
+    imageAssetsHook.clearAll()
     const baseDefaults = { ...DEFAULT_SETTINGS }
     const shouldSanitizeVideoSettings = shouldVideoGenerateWithLtxApi && mode !== 'text-to-image'
     setSettings(shouldSanitizeVideoSettings ? sanitizeForcedApiVideoSettings(baseDefaults) : baseDefaults)
@@ -221,10 +244,22 @@ export function Playground() {
             {/* Image Upload - Always shown in video mode (optional: makes it I2V) */}
             {isVideoMode && !isRetakeMode && (
               <>
-                <ImageUploader
-                  selectedImage={selectedImage}
-                  onImageSelect={setSelectedImage}
-                />
+                {wangpRemoteEnabled ? (
+                  <ImageAssetsPanel
+                    assets={imageAssetsHook.assets}
+                    onAdd={imageAssetsHook.addAsset}
+                    onRemove={imageAssetsHook.removeAsset}
+                    onRename={imageAssetsHook.renameAsset}
+                    onChangeRole={imageAssetsHook.changeRole}
+                    selectedVideoModel={selectedVideoModel}
+                    disabled={isBusy}
+                  />
+                ) : (
+                  <ImageUploader
+                    selectedImage={selectedImage}
+                    onImageSelect={setSelectedImage}
+                  />
+                )}
                 <AudioUploader
                   selectedAudio={selectedAudio}
                   onAudioSelect={setSelectedAudio}
@@ -242,16 +277,25 @@ export function Playground() {
             )}
 
             {/* Prompt Input */}
-            <Textarea
-              label="Prompt"
-              placeholder="Write a prompt..."
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              helperText="Longer, detailed prompts lead to better, more accurate results."
-              charCount={prompt.length}
-              maxChars={5000}
-              disabled={isBusy}
-            />
+            {wangpRemoteEnabled && isVideoMode ? (
+              <PromptTextarea
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                imageAssets={imageAssetsHook.assets}
+                disabled={isBusy}
+              />
+            ) : (
+              <Textarea
+                label="Prompt"
+                placeholder="Write a prompt..."
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                helperText="Longer, detailed prompts lead to better, more accurate results."
+                charCount={prompt.length}
+                maxChars={5000}
+                disabled={isBusy}
+              />
+            )}
 
             {/* Settings */}
             {!isRetakeMode && (
@@ -262,6 +306,9 @@ export function Playground() {
                 mode={mode}
                 forceApiGenerations={shouldVideoGenerateWithLtxApi}
                 hasAudio={!!selectedAudio}
+                wangpRemoteEnabled={wangpRemoteEnabled}
+                videoModels={availableModels.video_models}
+                imageModels={availableModels.image_models}
               />
             )}
 

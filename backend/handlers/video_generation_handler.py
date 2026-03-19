@@ -14,7 +14,9 @@ from typing import TYPE_CHECKING
 
 from PIL import Image
 
-from api_types import GenerateVideoRequest, GenerateVideoResponse, ImageConditioningInput, VideoCameraMotion
+import re
+
+from api_types import GenerateVideoRequest, GenerateVideoResponse, ImageAsset, ImageConditioningInput, VideoCameraMotion
 from _routes._errors import HTTPError
 from handlers.base import StateHandlerBase
 from handlers.generation_handler import GenerationHandler
@@ -48,6 +50,58 @@ FORCED_API_RESOLUTION_MAP: dict[str, dict[str, str]] = {
 A2V_FORCED_API_RESOLUTION = "1920x1080"
 FORCED_API_ALLOWED_ASPECT_RATIOS = {"16:9", "9:16"}
 FORCED_API_ALLOWED_FPS = {24, 25, 48, 50}
+
+_REMOTE_VIDEO_RESOLUTION_MAP: dict[str, dict[str, str]] = {
+    "512p": {"16:9": "832x480", "9:16": "480x832"},
+    "540p": {"16:9": "960x544", "9:16": "544x960"},
+    "720p": {"16:9": "1280x704", "9:16": "704x1280"},
+    "1080p": {"16:9": "1920x1088", "9:16": "1088x1920"},
+    "1440p": {"16:9": "2560x1440", "9:16": "1440x2560"},
+    "2160p": {"16:9": "3840x2176", "9:16": "2176x3840"},
+}
+_REMOTE_DEFAULT_RESOLUTION = "960x544"
+
+
+_AT_NAME_RE = re.compile(r"@\w+")
+
+
+def _strip_at_names(prompt: str) -> str:
+    return _AT_NAME_RE.sub("", prompt).strip()
+
+
+def _map_image_assets_to_wangp_settings(
+    assets: list[ImageAsset],
+) -> dict[str, object]:
+    result: dict[str, object] = {}
+
+    start_frames = [a for a in assets if a.role == "start_frame"]
+    environments = [a for a in assets if a.role == "environment"]
+    characters = [a for a in assets if a.role == "character"]
+
+    if start_frames:
+        sf = start_frames[0]
+        validated = str(validate_image_file(sf.path))
+        result["image_prompt_type"] = "S"
+        result["image_start"] = validated
+
+    refs: list[str] = []
+    vpt_flags = ""
+
+    for env in environments[:1]:
+        refs.append(str(validate_image_file(env.path)))
+        if "K" not in vpt_flags:
+            vpt_flags += "K"
+
+    for char in characters:
+        refs.append(str(validate_image_file(char.path)))
+        if "I" not in vpt_flags:
+            vpt_flags += "I"
+
+    if refs:
+        result["image_refs"] = refs
+        result["video_prompt_type"] = vpt_flags
+
+    return result
 
 
 def _get_allowed_durations(model_id: str, resolution_label: str, fps: int) -> set[int]:
@@ -610,21 +664,36 @@ class VideoGenerationHandler(StateHandlerBase):
             steps = 8 if req.model.strip().lower() == "fast" else max(1, settings_obj.pro_model.steps)
             seed = self._resolve_seed()
 
+            video_length = WanGPBridge.compute_num_frames(duration, fps) if self._wangp_bridge else max(((duration * fps) // 8) * 8 + 1, 9)
+            model_type = req.videoModelType or self._config.wangp_video_model_type
+            prompt_text = _strip_at_names(req.prompt) + self._camera_motion_prompts.get(req.cameraMotion, "")
             settings: dict[str, object] = {
-                "prompt": req.prompt + self._camera_motion_prompts.get(req.cameraMotion, ""),
-                "resolution": self._wangp_bridge._map_video_resolution(req.resolution, req.aspectRatio) if self._wangp_bridge else f"{req.resolution}",
+                "model_type": model_type,
+                "prompt": prompt_text,
+                "resolution": (
+                    self._wangp_bridge._map_video_resolution(req.resolution, req.aspectRatio)
+                    if self._wangp_bridge
+                    else _REMOTE_VIDEO_RESOLUTION_MAP.get(req.resolution, {}).get(req.aspectRatio, _REMOTE_DEFAULT_RESOLUTION)
+                ),
                 "num_inference_steps": steps,
-                "video_length": WanGPBridge.compute_num_frames(duration, fps) if self._wangp_bridge else max(((duration * fps) // 8) * 8 + 1, 9),
+                "video_length": video_length,
                 "duration_seconds": duration,
                 "force_fps": fps,
             }
+            if model_type.startswith("ltx2_"):
+                settings["sliding_window_size"] = video_length
             if req.negativePrompt.strip():
                 settings["negative_prompt"] = req.negativePrompt.strip()
             if seed is not None:
                 settings["seed"] = seed
-            if validated_image_path:
+
+            if req.imageAssets:
+                asset_settings = _map_image_assets_to_wangp_settings(req.imageAssets)
+                settings.update(asset_settings)
+            elif validated_image_path:
                 settings["image_prompt_type"] = "S"
                 settings["image_start"] = validated_image_path
+
             if validated_audio_path:
                 settings["audio_prompt_type"] = "A"
                 settings["audio_guide"] = validated_audio_path

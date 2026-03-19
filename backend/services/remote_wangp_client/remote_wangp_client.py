@@ -55,6 +55,32 @@ class RemoteWanGPClient:
             timeout=httpx.Timeout(connect=10.0, read=300.0, write=300.0, pool=10.0),
         )
 
+    _DEFAULT_MODELS: dict[str, list[dict[str, Any]]] = {
+        "video_models": [
+            {"model_type": "ltx2_22B_distilled", "name": "LTX2 22B Distilled", "architecture": "ltx2_22B",
+             "capabilities": {"i2v": True, "t2v": True, "image_prompt_types_allowed": "S", "image_ref_roles": [], "one_image_ref_needed": False}},
+        ],
+        "image_models": [
+            {"model_type": "z_image", "name": "Z-Image Turbo 6B", "architecture": "z_image"},
+        ],
+    }
+
+    def get_available_models(self) -> dict[str, list[dict[str, Any]]]:
+        try:
+            resp = self._client.get("/api/models")
+            resp.raise_for_status()
+            data = resp.json()
+            if "video_models" in data and "image_models" in data:
+                return data
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                logger.info("Remote server does not support /api/models, using defaults")
+            else:
+                logger.warning("Failed to fetch models from remote: %s", exc)
+        except Exception as exc:
+            logger.warning("Failed to fetch models from remote: %s", exc)
+        return dict(self._DEFAULT_MODELS)
+
     def get_status(self) -> RemoteWanGPStatus:
         try:
             resp = self._client.get("/api/health")

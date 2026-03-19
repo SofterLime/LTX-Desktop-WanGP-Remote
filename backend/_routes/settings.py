@@ -39,6 +39,14 @@ def route_post_settings(
     return StatusResponse(status="ok")
 
 
+@router.post("/reconnect-wangp-remote")
+def route_reconnect_wangp_remote(
+    handler: AppHandler = Depends(get_state_service),
+) -> StatusResponse:
+    handler.reconnect_remote_wangp()
+    return StatusResponse(status="ok")
+
+
 class TestWangpConnectionRequest(BaseModel):
     url: str
     key: str = ""

@@ -23,6 +23,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["models"])
 
 
+@router.get("/available-models")
+def route_available_models(handler: AppHandler = Depends(get_state_service)) -> dict:
+    client = handler.remote_wangp_client
+    if client is None:
+        return {"video_models": [], "image_models": []}
+    return client.get_available_models()
+
+
 @router.get("/models", response_model=list[ModelInfo])
 def route_models_list(handler: AppHandler = Depends(get_state_service)) -> list[ModelInfo]:
     return handler.models.get_models_list()

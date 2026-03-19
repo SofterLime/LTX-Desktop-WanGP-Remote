@@ -242,6 +242,12 @@ class ErrorResponse(BaseModel):
 # ============================================================
 
 
+class ImageAsset(BaseModel):
+    name: str = ""
+    role: Literal["character", "environment", "start_frame"] = "start_frame"
+    path: str
+
+
 class GenerateVideoRequest(BaseModel):
     prompt: NonEmptyPrompt
     resolution: str = "512p"
@@ -254,6 +260,8 @@ class GenerateVideoRequest(BaseModel):
     imagePath: str | None = None
     audioPath: str | None = None
     aspectRatio: Literal["16:9", "9:16"] = "16:9"
+    videoModelType: str | None = None
+    imageAssets: list[ImageAsset] | None = None
 
 
 class GenerateImageRequest(BaseModel):
@@ -262,6 +270,7 @@ class GenerateImageRequest(BaseModel):
     height: int = 1024
     numSteps: int = 4
     numImages: int = 1
+    imageModelType: str | None = None
 
 
 class ModelDownloadRequest(BaseModel):

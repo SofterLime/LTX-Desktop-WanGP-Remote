@@ -6,6 +6,7 @@ import {
   getAllowedForcedApiDurations,
   sanitizeForcedApiVideoSettings,
 } from '../lib/api-video-options'
+import type { VideoModel, ImageModel } from '../hooks/use-available-models'
 
 export interface GenerationSettings {
   model: 'fast' | 'pro'
@@ -19,7 +20,10 @@ export interface GenerationSettings {
   imageResolution: string
   imageAspectRatio: string
   imageSteps: number
-  variations?: number  // Number of image variations to generate
+  variations?: number
+  // Remote WanGP model selection
+  videoModelType?: string
+  imageModelType?: string
 }
 
 interface SettingsPanelProps {
@@ -29,7 +33,13 @@ interface SettingsPanelProps {
   mode?: GenerationMode
   forceApiGenerations?: boolean
   hasAudio?: boolean
+  wangpRemoteEnabled?: boolean
+  videoModels?: VideoModel[]
+  imageModels?: ImageModel[]
 }
+
+const REMOTE_WANGP_VIDEO_RESOLUTIONS = ['2160p', '1440p', '1080p', '720p', '540p'] as const
+const LOCAL_VIDEO_RESOLUTIONS = ['1080p', '720p', '540p'] as const
 
 export function SettingsPanel({
   settings,
@@ -38,6 +48,9 @@ export function SettingsPanel({
   mode = 'text-to-video',
   forceApiGenerations = false,
   hasAudio = false,
+  wangpRemoteEnabled = false,
+  videoModels = [],
+  imageModels = [],
 }: SettingsPanelProps) {
   const isImageMode = mode === 'text-to-image'
   const LOCAL_MAX_DURATION: Record<string, number> = { '540p': 20, '720p': 10, '1080p': 5 }
@@ -66,13 +79,28 @@ export function SettingsPanel({
     : [5, 6, 8, 10, 20].filter(d => d <= localMaxDuration)
   const resolutionOptions = forceApiGenerations
     ? (hasAudio ? ['1080p'] : [...FORCED_API_VIDEO_RESOLUTIONS])
-    : ['1080p', '720p', '540p']
+    : wangpRemoteEnabled
+      ? [...REMOTE_WANGP_VIDEO_RESOLUTIONS]
+      : [...LOCAL_VIDEO_RESOLUTIONS]
   const fpsOptions = forceApiGenerations ? [...FORCED_API_VIDEO_FPS] : [24, 25, 50]
 
   // Image mode settings
   if (isImageMode) {
     return (
       <div className="space-y-4">
+        {wangpRemoteEnabled && imageModels.length > 0 && (
+          <Select
+            label="Image Model"
+            value={settings.imageModelType || imageModels[0]?.model_type || ''}
+            onChange={(e) => handleChange('imageModelType', e.target.value)}
+            disabled={disabled}
+          >
+            {imageModels.map((m) => (
+              <option key={m.model_type} value={m.model_type}>{m.name}</option>
+            ))}
+          </Select>
+        )}
+
         {/* Aspect Ratio and Quality side by side */}
         <div className="grid grid-cols-2 gap-3">
           <Select
@@ -126,6 +154,19 @@ export function SettingsPanel({
         >
           <option value="fast" disabled={hasAudio}>LTX-2.3 Fast (API)</option>
           <option value="pro">LTX-2.3 Pro (API)</option>
+        </Select>
+      )}
+
+      {wangpRemoteEnabled && videoModels.length > 0 && (
+        <Select
+          label="Video Model"
+          value={settings.videoModelType || videoModels[0]?.model_type || ''}
+          onChange={(e) => handleChange('videoModelType', e.target.value)}
+          disabled={disabled}
+        >
+          {videoModels.map((m) => (
+            <option key={m.model_type} value={m.model_type}>{m.name}</option>
+          ))}
         </Select>
       )}
 
