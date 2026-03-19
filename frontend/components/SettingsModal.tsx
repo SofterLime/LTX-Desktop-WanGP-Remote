@@ -1,4 +1,4 @@
-import { AlertCircle, Check, Download, Film, Folder, Info, KeyRound, Settings, Sliders, Sparkles, X, Zap } from 'lucide-react'
+import { AlertCircle, Check, Download, Film, Folder, Globe, Info, KeyRound, Loader2, Settings, Sliders, Sparkles, X, Zap } from 'lucide-react'
 import React, { useEffect, useRef, useState } from 'react'
 import { Button } from './ui/button'
 import { useAppSettings, type AppSettings } from '../contexts/AppSettingsContext'
@@ -21,7 +21,7 @@ interface SettingsModalProps {
 type TabId = 'general' | 'apiKeys' | 'inference' | 'promptEnhancer' | 'about'
 
 export function SettingsModal({ isOpen, onClose, initialTab }: SettingsModalProps) {
-  const { settings, updateSettings, saveLtxApiKey, saveFalApiKey, saveGeminiApiKey, forceApiGenerations } = useAppSettings()
+  const { settings, updateSettings, saveLtxApiKey, saveFalApiKey, saveGeminiApiKey, saveWangpRemoteKey, forceApiGenerations } = useAppSettings()
   const onSettingsChange = (next: AppSettings) => updateSettings(next)
   const [activeTab, setActiveTab] = useState<TabId>('general')
   const [ltxApiKeyInput, setLtxApiKeyInput] = useState('')
@@ -31,6 +31,9 @@ export function SettingsModal({ isOpen, onClose, initialTab }: SettingsModalProp
   const falApiKeyInputRef = useRef<HTMLInputElement>(null)
   const [geminiApiKeyInput, setGeminiApiKeyInput] = useState('')
   const geminiApiKeyInputRef = useRef<HTMLInputElement>(null)
+  const [wangpRemoteUrlInput, setWangpRemoteUrlInput] = useState('')
+  const [wangpRemoteKeyInput, setWangpRemoteKeyInput] = useState('')
+  const [wangpConnectionTest, setWangpConnectionTest] = useState<{ status: 'idle' | 'testing' | 'success' | 'error'; message?: string }>({ status: 'idle' })
   const [textEncoderStatus, setTextEncoderStatus] = useState<TextEncoderStatus | null>(null)
   const [isDownloading, setIsDownloading] = useState(false)
   const [downloadError, setDownloadError] = useState<string | null>(null)
@@ -934,6 +937,133 @@ export function SettingsModal({ isOpen, onClose, initialTab }: SettingsModalProp
                     >
                       Get Gemini API key →
                     </a>
+                  </div>
+                </div>
+              </div>
+
+              {/* Remote WanGP Server Section */}
+              <div className="space-y-4 pt-4 border-t border-zinc-800">
+                <div className="flex items-center gap-2">
+                  <Globe className="h-4 w-4 text-orange-400" />
+                  <h3 className="text-sm font-semibold text-white">Remote WanGP Server</h3>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">Optional</span>
+                </div>
+
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  Connect to a remote GPU server running the Wan2GP REST API for video and image generation.
+                  This allows macOS users to offload inference to a dedicated GPU machine.
+                </p>
+
+                <div className="bg-zinc-800/50 rounded-lg p-4 space-y-3">
+                  <div className="space-y-2">
+                    <label className="text-xs text-zinc-400">Server URL</label>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <Globe className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+                        <input
+                          type="text"
+                          value={wangpRemoteUrlInput || settings.wangpRemoteUrl}
+                          onChange={(e) => setWangpRemoteUrlInput(e.target.value)}
+                          onBlur={() => {
+                            const trimmed = wangpRemoteUrlInput.trim()
+                            if (trimmed !== settings.wangpRemoteUrl) {
+                              updateSettings({ wangpRemoteUrl: trimmed })
+                            }
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => e.stopPropagation()}
+                          placeholder="http://192.168.1.50:8100"
+                          autoComplete="off"
+                          className="w-full rounded-lg border border-zinc-700 bg-zinc-900 py-2.5 pl-9 pr-3 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <button
+                        onClick={async () => {
+                          const url = (wangpRemoteUrlInput || settings.wangpRemoteUrl).trim()
+                          if (!url) {
+                            setWangpConnectionTest({ status: 'error', message: 'Enter a URL first' })
+                            return
+                          }
+                          setWangpConnectionTest({ status: 'testing' })
+                          try {
+                            const response = await backendFetch('/api/test-wangp-connection', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ url, key: wangpRemoteKeyInput }),
+                            })
+                            const data = await response.json()
+                            if (data.success) {
+                              setWangpConnectionTest({ status: 'success', message: 'Connected' })
+                            } else {
+                              setWangpConnectionTest({ status: 'error', message: data.error || 'Connection failed' })
+                            }
+                          } catch (err) {
+                            setWangpConnectionTest({ status: 'error', message: String(err) })
+                          }
+                        }}
+                        disabled={wangpConnectionTest.status === 'testing'}
+                        className="px-3 py-2 bg-zinc-700 text-white text-sm rounded-lg hover:bg-zinc-600 disabled:opacity-50 transition-colors whitespace-nowrap flex items-center gap-1.5"
+                      >
+                        {wangpConnectionTest.status === 'testing' ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : wangpConnectionTest.status === 'success' ? (
+                          <Check className="h-3.5 w-3.5 text-green-400" />
+                        ) : wangpConnectionTest.status === 'error' ? (
+                          <X className="h-3.5 w-3.5 text-red-400" />
+                        ) : null}
+                        Test
+                      </button>
+                    </div>
+                    {wangpConnectionTest.status !== 'idle' && wangpConnectionTest.status !== 'testing' && (
+                      <p className={`text-xs ${wangpConnectionTest.status === 'success' ? 'text-green-400' : 'text-red-400'}`}>
+                        {wangpConnectionTest.message}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs text-zinc-400">API Key</label>
+                    <div className="flex gap-2">
+                      <LtxApiKeyInput
+                        value={wangpRemoteKeyInput}
+                        onChange={(e) => setWangpRemoteKeyInput(e.target.value)}
+                        placeholder={settings.hasWangpRemoteKey ? 'Enter new key to replace...' : 'Enter remote server API key...'}
+                        stopPropagation
+                        className="flex-1"
+                      />
+                      <button
+                        onClick={() => {
+                          const trimmed = wangpRemoteKeyInput.trim()
+                          if (!trimmed) return
+                          void saveWangpRemoteKey(trimmed)
+                          setWangpRemoteKeyInput('')
+                        }}
+                        disabled={!wangpRemoteKeyInput.trim()}
+                        className="px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                      >
+                        Save Key
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className={`text-xs px-2 py-1 rounded inline-flex items-center gap-1.5 ${
+                      settings.wangpRemoteUrl
+                        ? 'bg-green-500/10 text-green-400'
+                        : 'bg-zinc-800 text-zinc-500'
+                    }`}>
+                      {settings.wangpRemoteUrl ? (
+                        <>
+                          <Check className="h-3 w-3" />
+                          Remote configured
+                        </>
+                      ) : (
+                        <>
+                          <AlertCircle className="h-3 w-3" />
+                          Not configured
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

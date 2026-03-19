@@ -22,6 +22,7 @@ from handlers import (
     VideoGenerationHandler,
 )
 from runtime_config.runtime_config import RuntimeConfig
+from services.remote_wangp_client import RemoteWanGPClient
 from services.wangp_bridge import WanGPBridge
 from services.interfaces import (
     A2VPipeline,
@@ -94,6 +95,13 @@ class AppHandler:
             camera_motion_prompts=config.camera_motion_prompts,
             extra_args=config.wangp_extra_args,
         )
+        self.remote_wangp_client: RemoteWanGPClient | None = None
+        if config.wangp_remote_enabled:
+            self.remote_wangp_client = RemoteWanGPClient(
+                base_url=config.wangp_remote_url,
+                api_key=config.wangp_remote_key,
+                output_dir=config.outputs_dir,
+            )
 
         self._lock = threading.RLock()
 
@@ -175,6 +183,7 @@ class AppHandler:
             camera_motion_prompts=config.camera_motion_prompts,
             default_negative_prompt=config.default_negative_prompt,
             wangp_bridge=self.wangp_bridge,
+            remote_wangp_client=self.remote_wangp_client,
         )
 
         self.image_generation = ImageGenerationHandler(
@@ -186,6 +195,7 @@ class AppHandler:
             config=config,
             zit_api_client=zit_api_client,
             wangp_bridge=self.wangp_bridge,
+            remote_wangp_client=self.remote_wangp_client,
         )
 
         self.health = HealthHandler(

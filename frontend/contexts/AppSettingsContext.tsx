@@ -23,6 +23,8 @@ export interface AppSettings {
   promptCacheSize: number
   promptEnhancerEnabledT2V: boolean
   promptEnhancerEnabledI2V: boolean
+  wangpRemoteUrl: string
+  hasWangpRemoteKey: boolean
   seedLocked: boolean
   lockedSeed: number
 }
@@ -40,6 +42,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   promptCacheSize: 1,
   promptEnhancerEnabledT2V: false,
   promptEnhancerEnabledI2V: false,
+  wangpRemoteUrl: '',
+  hasWangpRemoteKey: false,
   seedLocked: false,
   lockedSeed: 42,
 }
@@ -55,6 +59,7 @@ interface AppSettingsContextValue {
   saveLtxApiKey: (value: string) => Promise<void>
   saveFalApiKey: (value: string) => Promise<void>
   saveGeminiApiKey: (value: string) => Promise<void>
+  saveWangpRemoteKey: (value: string) => Promise<void>
   forceApiGenerations: boolean
   shouldVideoGenerateWithLtxApi: boolean
 }
@@ -87,6 +92,8 @@ function normalizeAppSettings(data: Partial<AppSettings>): AppSettings {
     promptCacheSize: data.promptCacheSize ?? DEFAULT_APP_SETTINGS.promptCacheSize,
     promptEnhancerEnabledT2V: data.promptEnhancerEnabledT2V ?? DEFAULT_APP_SETTINGS.promptEnhancerEnabledT2V,
     promptEnhancerEnabledI2V: data.promptEnhancerEnabledI2V ?? DEFAULT_APP_SETTINGS.promptEnhancerEnabledI2V,
+    wangpRemoteUrl: data.wangpRemoteUrl ?? DEFAULT_APP_SETTINGS.wangpRemoteUrl,
+    hasWangpRemoteKey: data.hasWangpRemoteKey ?? DEFAULT_APP_SETTINGS.hasWangpRemoteKey,
     seedLocked: data.seedLocked ?? DEFAULT_APP_SETTINGS.seedLocked,
     lockedSeed: data.lockedSeed ?? DEFAULT_APP_SETTINGS.lockedSeed,
   }
@@ -210,7 +217,7 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
     if (!isLoaded || backendProcessStatus !== 'alive') return
     const syncTimer = setTimeout(async () => {
       try {
-        const { hasLtxApiKey: _a, hasFalApiKey: _b, hasGeminiApiKey: _c, ...syncPayload } = settings
+        const { hasLtxApiKey: _a, hasFalApiKey: _b, hasGeminiApiKey: _c, hasWangpRemoteKey: _d, ...syncPayload } = settings
         await backendFetch('/api/settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -270,6 +277,19 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
     await refreshSettings()
   }, [refreshSettings])
 
+  const saveWangpRemoteKey = useCallback(async (value: string) => {
+    const response = await backendFetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wangpRemoteKey: value }),
+    })
+    if (!response.ok) {
+      const detail = await response.text()
+      throw new Error(detail || 'Failed to save WanGP remote API key.')
+    }
+    await refreshSettings()
+  }, [refreshSettings])
+
   const shouldVideoGenerateWithLtxApi =
     forceApiGenerations || (settings.userPrefersLtxApiVideoGenerations && settings.hasLtxApiKey)
 
@@ -283,10 +303,11 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
       saveLtxApiKey,
       saveFalApiKey,
       saveGeminiApiKey,
+      saveWangpRemoteKey,
       forceApiGenerations,
       shouldVideoGenerateWithLtxApi,
     }),
-    [forceApiGenerations, isLoaded, refreshSettings, runtimePolicyLoaded, saveFalApiKey, saveGeminiApiKey, saveLtxApiKey, settings, shouldVideoGenerateWithLtxApi, updateSettings],
+    [forceApiGenerations, isLoaded, refreshSettings, runtimePolicyLoaded, saveFalApiKey, saveGeminiApiKey, saveLtxApiKey, saveWangpRemoteKey, settings, shouldVideoGenerateWithLtxApi, updateSettings],
   )
 
   return <AppSettingsContext.Provider value={contextValue}>{children}</AppSettingsContext.Provider>

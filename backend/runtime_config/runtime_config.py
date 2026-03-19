@@ -33,6 +33,9 @@ class RuntimeConfig:
     wangp_video_model_type: str
     wangp_image_model_type: str
     wangp_extra_args: tuple[str, ...]
+    wangp_remote_enabled: bool = False
+    wangp_remote_url: str = ""
+    wangp_remote_key: str = ""
 
     def spec_for(self, model_type: ModelFileType) -> ModelFileDownloadSpec:
         return self.model_download_specs[model_type]

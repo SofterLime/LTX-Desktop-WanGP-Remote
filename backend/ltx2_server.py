@@ -219,17 +219,24 @@ IC_LORA_DIR.mkdir(parents=True, exist_ok=True)
 
 LTX_API_BASE_URL = "https://api.ltx.video"
 WANGP_ROOT = _resolve_wangp_root()
-WANGP_ENABLED = platform.system() == "Windows" and WANGP_ROOT is not None
+WANGP_ENABLED = WANGP_ROOT is not None and (WANGP_ROOT / "shared" / "api.py").exists()
 WANGP_PYTHON = _resolve_wangp_python(WANGP_ROOT) if WANGP_ENABLED else None
 WANGP_CONFIG_DIR = APP_DATA_DIR / "wangp_bridge"
 WANGP_VIDEO_MODEL_TYPE = os.environ.get("WANGP_VIDEO_MODEL_TYPE", "ltx2_22B_distilled")
 WANGP_IMAGE_MODEL_TYPE = os.environ.get("WANGP_IMAGE_MODEL_TYPE", "z_image")
 WANGP_EXTRA_ARGS = _resolve_wangp_extra_args()
 
+WANGP_REMOTE_URL = os.environ.get("WANGP_REMOTE_URL", "").strip()
+WANGP_REMOTE_KEY = os.environ.get("WANGP_REMOTE_KEY", "").strip()
+WANGP_REMOTE_ENABLED = bool(WANGP_REMOTE_URL)
+
 
 def _resolve_force_api_generations() -> bool:
-    if WANGP_ENABLED:
-        logger.info("WanGP bridge detected at %s; disabling API-only runtime policy", WANGP_ROOT)
+    if WANGP_ENABLED or WANGP_REMOTE_ENABLED:
+        if WANGP_ENABLED:
+            logger.info("WanGP bridge detected at %s; disabling API-only runtime policy", WANGP_ROOT)
+        else:
+            logger.info("Remote WanGP enabled at %s; disabling API-only runtime policy", WANGP_REMOTE_URL)
         return False
 
     gpu_info = GpuInfoImpl()
@@ -255,7 +262,7 @@ def _resolve_force_api_generations() -> bool:
 
 FORCE_API_GENERATIONS = _resolve_force_api_generations()
 REQUIRED_MODEL_TYPES: frozenset[ModelFileType] = (
-    frozenset() if (FORCE_API_GENERATIONS or WANGP_ENABLED) else DEFAULT_REQUIRED_MODEL_TYPES
+    frozenset() if (FORCE_API_GENERATIONS or WANGP_ENABLED or WANGP_REMOTE_ENABLED) else DEFAULT_REQUIRED_MODEL_TYPES
 )
 
 CAMERA_MOTION_PROMPTS = {
@@ -292,6 +299,9 @@ runtime_config = RuntimeConfig(
     wangp_video_model_type=WANGP_VIDEO_MODEL_TYPE,
     wangp_image_model_type=WANGP_IMAGE_MODEL_TYPE,
     wangp_extra_args=WANGP_EXTRA_ARGS,
+    wangp_remote_enabled=WANGP_REMOTE_ENABLED,
+    wangp_remote_url=WANGP_REMOTE_URL,
+    wangp_remote_key=WANGP_REMOTE_KEY,
 )
 
 handler = build_initial_state(runtime_config, DEFAULT_APP_SETTINGS)
@@ -334,6 +344,8 @@ def log_hardware_info() -> None:
     logger.info(f"SageAttention: {'enabled' if use_sage_attention else 'disabled'}")
     if WANGP_ENABLED:
         logger.info("WanGP bridge: enabled  |  Root: %s  |  Python: %s", WANGP_ROOT, WANGP_PYTHON)
+    elif WANGP_REMOTE_ENABLED:
+        logger.info("WanGP remote: enabled  |  URL: %s", WANGP_REMOTE_URL)
     else:
         logger.info("WanGP bridge: disabled")
     logger.info(f"Python: {sys.version.split()[0]}  |  Torch: {torch.__version__}")

@@ -20,6 +20,7 @@ from handlers.base import StateHandlerBase
 from handlers.generation_handler import GenerationHandler
 from handlers.pipelines_handler import PipelinesHandler
 from handlers.text_handler import TextHandler
+from services.remote_wangp_client import RemoteWanGPClient
 from services.wangp_bridge import WanGPBridge
 from server_utils.media_validation import (
     normalize_optional_path,
@@ -69,6 +70,7 @@ class VideoGenerationHandler(StateHandlerBase):
         camera_motion_prompts: dict[str, str],
         default_negative_prompt: str,
         wangp_bridge: WanGPBridge,
+        remote_wangp_client: RemoteWanGPClient | None = None,
     ) -> None:
         super().__init__(state, lock)
         self._generation = generation_handler
@@ -80,8 +82,12 @@ class VideoGenerationHandler(StateHandlerBase):
         self._camera_motion_prompts = camera_motion_prompts
         self._default_negative_prompt = default_negative_prompt
         self._wangp_bridge = wangp_bridge
+        self._remote_wangp_client = remote_wangp_client
 
     def generate(self, req: GenerateVideoRequest) -> GenerateVideoResponse:
+        if self._config.wangp_remote_enabled and self._remote_wangp_client is not None:
+            return self._generate_via_wangp_remote(req)
+
         if self._config.wangp_enabled:
             return self._generate_via_wangp(req)
 
@@ -581,6 +587,65 @@ class VideoGenerationHandler(StateHandlerBase):
             self._generation.fail_generation(str(e))
             if "cancelled" in str(e).lower():
                 logger.info("WanGP generation cancelled by user")
+                return GenerateVideoResponse(status="cancelled")
+            raise HTTPError(500, str(e)) from e
+
+    def _generate_via_wangp_remote(self, req: GenerateVideoRequest) -> GenerateVideoResponse:
+        if self._generation.is_generation_running():
+            raise HTTPError(409, "Generation already in progress")
+
+        generation_id = self._make_generation_id()
+        self._generation.start_api_generation(generation_id)
+
+        duration = self._parse_forced_numeric_field(req.duration, "INVALID_DURATION")
+        fps = self._parse_forced_numeric_field(req.fps, "INVALID_FPS")
+        image_path = normalize_optional_path(req.imagePath)
+        audio_path = normalize_optional_path(req.audioPath)
+
+        try:
+            validated_image_path = str(validate_image_file(image_path)) if image_path else None
+            validated_audio_path = str(validate_audio_file(audio_path)) if audio_path else None
+
+            settings_obj = self.state.app_settings.model_copy(deep=True)
+            steps = 8 if req.model.strip().lower() == "fast" else max(1, settings_obj.pro_model.steps)
+            seed = self._resolve_seed()
+
+            settings: dict[str, object] = {
+                "prompt": req.prompt + self._camera_motion_prompts.get(req.cameraMotion, ""),
+                "resolution": self._wangp_bridge._map_video_resolution(req.resolution, req.aspectRatio) if self._wangp_bridge else f"{req.resolution}",
+                "num_inference_steps": steps,
+                "video_length": WanGPBridge.compute_num_frames(duration, fps) if self._wangp_bridge else max(((duration * fps) // 8) * 8 + 1, 9),
+                "duration_seconds": duration,
+                "force_fps": fps,
+            }
+            if req.negativePrompt.strip():
+                settings["negative_prompt"] = req.negativePrompt.strip()
+            if seed is not None:
+                settings["seed"] = seed
+            if validated_image_path:
+                settings["image_prompt_type"] = "S"
+                settings["image_start"] = validated_image_path
+            if validated_audio_path:
+                settings["audio_prompt_type"] = "A"
+                settings["audio_guide"] = validated_audio_path
+
+            assert self._remote_wangp_client is not None
+            result = self._remote_wangp_client.generate_video(
+                settings=settings,
+                on_progress=self._generation.update_progress,
+                is_cancelled=self._generation.is_generation_cancelled,
+            )
+
+            if not result.success or not result.files:
+                raise RuntimeError(result.error or "Remote generation failed without producing a video")
+
+            output_path = result.files[0]
+            self._generation.complete_generation(output_path)
+            return GenerateVideoResponse(status="complete", video_path=output_path)
+        except Exception as e:
+            self._generation.fail_generation(str(e))
+            if "cancelled" in str(e).lower():
+                logger.info("Remote WanGP generation cancelled by user")
                 return GenerateVideoResponse(status="cancelled")
             raise HTTPError(500, str(e)) from e
 

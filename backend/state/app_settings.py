@@ -72,6 +72,8 @@ class AppSettings(SettingsBaseModel):
     prompt_enhancer_enabled_t2v: bool = True
     prompt_enhancer_enabled_i2v: bool = False
     gemini_api_key: str = ""
+    wangp_remote_url: str = ""
+    wangp_remote_key: str = ""
     seed_locked: bool = False
     locked_seed: int = 42
 
@@ -143,6 +145,8 @@ class SettingsResponse(SettingsBaseModel):
     prompt_enhancer_enabled_t2v: bool = True
     prompt_enhancer_enabled_i2v: bool = False
     has_gemini_api_key: bool = False
+    wangp_remote_url: str = ""
+    has_wangp_remote_key: bool = False
     seed_locked: bool = False
     locked_seed: int = 42
 
@@ -152,9 +156,11 @@ def to_settings_response(settings: AppSettings) -> SettingsResponse:
     ltx_key = data.pop("ltx_api_key", "")
     fal_key = data.pop("fal_api_key", "")
     gemini_key = data.pop("gemini_api_key", "")
+    wangp_remote_key = data.pop("wangp_remote_key", "")
     data["has_ltx_api_key"] = bool(ltx_key)
     data["has_fal_api_key"] = bool(fal_key)
     data["has_gemini_api_key"] = bool(gemini_key)
+    data["has_wangp_remote_key"] = bool(wangp_remote_key)
     return SettingsResponse.model_validate(data)
 
 

@@ -22,11 +22,21 @@ ok "git  $(git --version)"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# ── Wan2GP checkout ─────────────────────────────────────────
+# ── Wan2GP checkout (skip on macOS) ────────────────────────
+IS_MACOS=false
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  IS_MACOS=true
+fi
+
 echo ""
-echo "Ensuring Wan2GP checkout..."
-bash "$SCRIPT_DIR/ensure-wan2gp.sh"
-ok "Wan2GP checkout ready"
+if $IS_MACOS; then
+  echo "macOS detected — skipping Wan2GP clone (remote-only mode)"
+  ok "Wan2GP: skipped (use WANGP_REMOTE_URL for remote GPU)"
+else
+  echo "Ensuring Wan2GP checkout..."
+  bash "$SCRIPT_DIR/ensure-wan2gp.sh"
+  ok "Wan2GP checkout ready"
+fi
 
 # ── pnpm install ────────────────────────────────────────────────────
 echo ""
@@ -42,8 +52,20 @@ cd "$PROJECT_DIR/backend"
 uv sync --extra dev
 ok "uv sync complete"
 
+# Install httpx for remote WanGP client
 echo ""
-echo "Wan2GP local bridge remains disabled on macOS; the checkout is cloned for repo parity and packaging."
+echo "Installing httpx for remote WanGP client..."
+.venv/bin/pip install httpx >/dev/null 2>&1 || uv pip install httpx
+ok "httpx installed"
+
+if $IS_MACOS; then
+  echo ""
+  echo "macOS remote-only mode: set WANGP_REMOTE_URL and WANGP_REMOTE_KEY"
+  echo "or configure in Settings > API Keys to connect to a remote GPU server."
+else
+  echo ""
+  echo "Wan2GP local bridge available. For remote mode, set WANGP_REMOTE_URL."
+fi
 
 # Verify torch + MPS
 echo ""
