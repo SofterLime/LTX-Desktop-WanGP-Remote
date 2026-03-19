@@ -10,8 +10,18 @@ import type { GenSpaceRetakeSource } from '../contexts/ProjectContext'
 import { useAppSettings } from '../contexts/AppSettingsContext'
 import { useGeneration } from '../hooks/use-generation'
 import { useRetake } from '../hooks/use-retake'
+import { useAvailableModels, type VideoModel, type ImageModel } from '../hooks/use-available-models'
+import { useAvailableLoras } from '../hooks/use-available-loras'
+import { useImageAssets } from '../hooks/use-image-assets'
+import type { ImageAsset, ImageAssetRole } from '../types/image-assets'
+import type { PerformanceProfile, SelectedLora, ModelParameter } from '../types/remote-models'
 import type { Asset } from '../types/project'
 import { GenerationErrorDialog } from '../components/GenerationErrorDialog'
+import { ImageAssetsPanel } from '../components/ImageAssetsPanel'
+import { PerformanceProfilePicker } from '../components/PerformanceProfilePicker'
+import { LoraSelector } from '../components/LoraSelector'
+import { ModelParametersPanel } from '../components/ModelParametersPanel'
+import { PromptTextarea } from '../components/PromptTextarea'
 import { copyToAssetFolder } from '../lib/asset-copy'
 import { fileUrlToPath } from '../lib/url-to-path'
 import {
@@ -319,6 +329,26 @@ function PromptBar({
   canGenerate,
   buttonLabel,
   buttonIcon,
+  wangpRemoteEnabled = false,
+  videoModels = [],
+  imageModels = [],
+  imageAssets = [],
+  onAddAsset,
+  onRemoveAsset,
+  onRenameAsset,
+  onChangeAssetRole,
+  selectedVideoModel,
+  selectedImageModel,
+  profiles = [],
+  selectedProfileId,
+  onProfileChange,
+  availableLoras = [],
+  lorasLoading,
+  selectedLoras = [],
+  onLorasChange,
+  activeParameters = [],
+  modelParamOverrides = {},
+  onModelParamChange,
 }: {
   mode: 'image' | 'video' | 'retake'
   onModeChange: (mode: 'image' | 'video' | 'retake') => void
@@ -333,18 +363,29 @@ function PromptBar({
   onInputImageChange: (url: string | null) => void
   inputAudio: string | null
   onInputAudioChange: (url: string | null) => void
-  settings: {
-    model: string
-    duration: number
-    videoResolution: string
-    fps: number
-    aspectRatio: string
-    imageResolution: string
-    variations: number
-    audio?: boolean
-  }
+  settings: Record<string, any>
   onSettingsChange: (settings: any) => void
   shouldVideoGenerateWithLtxApi: boolean
+  wangpRemoteEnabled?: boolean
+  videoModels?: VideoModel[]
+  imageModels?: ImageModel[]
+  imageAssets?: ImageAsset[]
+  onAddAsset?: (filePath: string, previewUrl: string) => void
+  onRemoveAsset?: (id: string) => void
+  onRenameAsset?: (id: string, name: string) => void
+  onChangeAssetRole?: (id: string, role: ImageAssetRole) => void
+  selectedVideoModel?: VideoModel | null
+  selectedImageModel?: ImageModel | null
+  profiles?: PerformanceProfile[]
+  selectedProfileId?: string
+  onProfileChange?: (profileId: string | undefined) => void
+  availableLoras?: import('../types/remote-models').LoraEntry[]
+  lorasLoading?: boolean
+  selectedLoras?: SelectedLora[]
+  onLorasChange?: (loras: SelectedLora[]) => void
+  activeParameters?: ModelParameter[]
+  modelParamOverrides?: Record<string, unknown>
+  onModelParamChange?: (key: string, value: unknown) => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const audioInputRef = useRef<HTMLInputElement>(null)
@@ -358,7 +399,9 @@ function PromptBar({
     : [5, 6, 8, 10, 20].filter(d => d <= localMaxDuration)
   const videoResolutionOptions = shouldVideoGenerateWithLtxApi
     ? (inputAudio ? ['1080p'] : [...FORCED_API_VIDEO_RESOLUTIONS])
-    : ['540p', '720p', '1080p']
+    : wangpRemoteEnabled
+      ? ['2160p', '1440p', '1080p', '720p', '540p']
+      : ['540p', '720p', '1080p']
   const videoFpsOptions = shouldVideoGenerateWithLtxApi ? [...FORCED_API_VIDEO_FPS] : [24, 25, 50]
 
   const handleDrop = (e: React.DragEvent) => {
@@ -438,10 +481,75 @@ function PromptBar({
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-visible">
+      {/* Remote WanGP panels — profile, loras, params, assets */}
+      {wangpRemoteEnabled && !isRetake && (
+        <div className="px-2 pt-2 space-y-2">
+          {profiles.length > 0 && onProfileChange && (
+            <PerformanceProfilePicker
+              profiles={profiles}
+              selectedProfileId={selectedProfileId}
+              onSelect={onProfileChange}
+              disabled={isGenerating}
+            />
+          )}
+
+          {onLorasChange && (
+            <LoraSelector
+              availableLoras={availableLoras}
+              selectedLoras={selectedLoras}
+              onChangeSelection={onLorasChange}
+              loading={lorasLoading}
+              disabled={isGenerating}
+            />
+          )}
+
+          {activeParameters.length > 0 && onModelParamChange && (
+            <ModelParametersPanel
+              parameters={activeParameters}
+              values={modelParamOverrides}
+              onChange={onModelParamChange}
+              disabled={isGenerating}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Image assets panel — video mode */}
+      {wangpRemoteEnabled && mode === 'video' && !isRetake && onAddAsset && onRemoveAsset && onRenameAsset && onChangeAssetRole && (
+        <div className="px-2 pt-2">
+          <ImageAssetsPanel
+            assets={imageAssets}
+            onAdd={onAddAsset}
+            onRemove={onRemoveAsset}
+            onRename={onRenameAsset}
+            onChangeRole={onChangeAssetRole}
+            selectedVideoModel={selectedVideoModel}
+            disabled={isGenerating}
+          />
+        </div>
+      )}
+
+      {/* Image assets panel — image mode with reference support */}
+      {wangpRemoteEnabled && mode === 'image' && !isRetake && selectedImageModel?.capabilities?.supports_reference && onAddAsset && onRemoveAsset && onRenameAsset && onChangeAssetRole && (
+        <div className="px-2 pt-2">
+          <ImageAssetsPanel
+            assets={imageAssets}
+            onAdd={onAddAsset}
+            onRemove={onRemoveAsset}
+            onRename={onRenameAsset}
+            onChangeRole={onChangeAssetRole}
+            selectedVideoModel={selectedVideoModel}
+            selectedImageModel={selectedImageModel}
+            generationMode="image"
+            disabled={isGenerating}
+          />
+        </div>
+      )}
+
       {/* Top row: Image ref | Prompt | Generate */}
       <div className="flex items-start">
-        {/* Input image drop zone — video mode only (I2V) */}
-        {mode === 'video' && !isRetake && (
+        {/* Input image drop zone — video mode only, legacy mode (not wangpRemote) */}
+        {!wangpRemoteEnabled && mode === 'video' && !isRetake && (
           <div
             className={`relative w-10 h-10 mx-2 mt-2 rounded-lg border-2 border-dashed transition-colors flex items-center justify-center flex-shrink-0 cursor-pointer ${
               isDragOver ? 'border-blue-500 bg-blue-500/10' : 'border-zinc-700 hover:border-zinc-500'
@@ -511,18 +619,27 @@ function PromptBar({
 
         {/* Prompt input - fills remaining width */}
         <div className="flex-1 min-w-0 py-1">
-          <textarea
-            value={prompt}
-            onChange={(e) => onPromptChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={mode === 'retake'
-              ? "Describe what should happen in the selected section..."
-              : mode === 'image'
-                ? "A close-up of a woman talking on the phone..."
-                : "The woman sips from a cup of coffee..."
-            }
-            className="w-full bg-transparent text-white text-sm placeholder:text-zinc-500 focus:outline-none px-2 py-2 resize-none overflow-y-auto h-[70px] leading-5"
-          />
+          {wangpRemoteEnabled && mode === 'video' ? (
+            <PromptTextarea
+              value={prompt}
+              onChange={(e) => onPromptChange(e.target.value)}
+              imageAssets={imageAssets}
+              disabled={isGenerating}
+            />
+          ) : (
+            <textarea
+              value={prompt}
+              onChange={(e) => onPromptChange(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={mode === 'retake'
+                ? "Describe what should happen in the selected section..."
+                : mode === 'image'
+                  ? "A close-up of a woman talking on the phone..."
+                  : "The woman sips from a cup of coffee..."
+              }
+              className="w-full bg-transparent text-white text-sm placeholder:text-zinc-500 focus:outline-none px-2 py-2 resize-none overflow-y-auto h-[70px] leading-5"
+            />
+          )}
         </div>
 
       </div>
@@ -554,11 +671,27 @@ function PromptBar({
           <div className="text-[10px] text-zinc-500 pr-2">Trim in the panel above, then retake</div>
         ) : mode === 'image' ? (
           <>
-            {/* Model indicator */}
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-zinc-800/50">
-              <ZitIcon className="h-3.5 w-3.5" />
-              <span className="text-zinc-300 font-medium">Z-Image Turbo</span>
-            </div>
+            {wangpRemoteEnabled && imageModels.length > 0 ? (
+              <SettingsDropdown
+                title="IMAGE MODEL"
+                value={settings.imageModelType || imageModels[0]?.model_type || ''}
+                onChange={(v) => onSettingsChange({ ...settings, imageModelType: v })}
+                options={imageModels.map((m) => ({ value: m.model_type, label: m.name }))}
+                trigger={
+                  <>
+                    <ZitIcon className="h-3.5 w-3.5" />
+                    <span className="text-zinc-300 font-medium truncate max-w-[100px]">
+                      {imageModels.find(m => m.model_type === (settings.imageModelType || imageModels[0]?.model_type))?.name ?? 'Image Model'}
+                    </span>
+                  </>
+                }
+              />
+            ) : (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-zinc-800/50">
+                <ZitIcon className="h-3.5 w-3.5" />
+                <span className="text-zinc-300 font-medium">Z-Image Turbo</span>
+              </div>
+            )}
             
             {/* Resolution dropdown */}
             <SettingsDropdown
@@ -624,6 +757,25 @@ function PromptBar({
                 </>
               }
             />
+
+            {wangpRemoteEnabled && videoModels.length > 0 && (
+              <>
+                <div className="w-px h-4 bg-zinc-700 mx-0.5" />
+                <SettingsDropdown
+                  title="VIDEO MODEL"
+                  value={settings.videoModelType || videoModels[0]?.model_type || ''}
+                  onChange={(v) => onSettingsChange({ ...settings, videoModelType: v })}
+                  options={videoModels.map((m) => ({ value: m.model_type, label: m.name }))}
+                  trigger={
+                    <>
+                      <span className="text-zinc-300 font-medium truncate max-w-[100px]">
+                        {videoModels.find(m => m.model_type === (settings.videoModelType || videoModels[0]?.model_type))?.name ?? 'Model'}
+                      </span>
+                    </>
+                  }
+                />
+              </>
+            )}
 
             <div className="w-px h-4 bg-zinc-700 mx-0.5" />
             
@@ -784,8 +936,13 @@ const DEFAULT_VIDEO_SETTINGS = {
 
 export function GenSpace() {
   const { currentProject, currentProjectId, addAsset, addTakeToAsset, deleteAsset, toggleFavorite, genSpaceEditImageUrl, setGenSpaceEditImageUrl, setGenSpaceEditMode, genSpaceAudioUrl, setGenSpaceAudioUrl, genSpaceRetakeSource, setGenSpaceRetakeSource, setPendingRetakeUpdate } = useProjects()
-  const { shouldVideoGenerateWithLtxApi, forceApiGenerations, settings: appSettings } = useAppSettings()
+  const { shouldVideoGenerateWithLtxApi, forceApiGenerations, settings: appSettings, wangpRemoteEnabled } = useAppSettings()
+  const { models: availableModels, profiles: availableProfiles } = useAvailableModels()
+  const imageAssetsHook = useImageAssets()
   const [mode, setMode] = useState<'image' | 'video' | 'retake'>('video')
+  const [selectedProfileId, setSelectedProfileId] = useState<string | undefined>()
+  const [selectedLoras, setSelectedLoras] = useState<SelectedLora[]>([])
+  const [modelParamOverrides, setModelParamOverrides] = useState<Record<string, unknown>>({})
   const [prompt, setPrompt] = useState('')
   const [inputImage, setInputImage] = useState<string | null>(null)
   const [inputAudio, setInputAudio] = useState<string | null>(null)
@@ -806,14 +963,83 @@ export function GenSpace() {
       videoDuration: number
     }
   } | null>(null)
-  const [settings, setSettings] = useState(() => ({ ...DEFAULT_VIDEO_SETTINGS }))
+  const [settings, setSettings] = useState<Record<string, any>>(() => ({ ...DEFAULT_VIDEO_SETTINGS }))
+
+  const selectedProfile = availableProfiles.find((p) => p.id === selectedProfileId)
+  const filteredVideoModels = selectedProfile
+    ? availableModels.video_models.filter((m) => selectedProfile.compatible_model_types.includes(m.model_type))
+    : availableModels.video_models
+  const filteredImageModels = selectedProfile
+    ? availableModels.image_models.filter((m) => selectedProfile.compatible_model_types.includes(m.model_type))
+    : availableModels.image_models
+
+  const selectedVideoModel = filteredVideoModels.find(
+    (m) => m.model_type === settings.videoModelType
+  ) ?? filteredVideoModels[0] ?? null
+  const selectedImageModel = filteredImageModels.find(
+    (m) => m.model_type === settings.imageModelType
+  ) ?? filteredImageModels[0] ?? null
+
+  const activeModelType = mode === 'image'
+    ? selectedImageModel?.model_type
+    : selectedVideoModel?.model_type
+  const { loras: availableLoras, loading: lorasLoading } = useAvailableLoras(activeModelType)
+
+  const activeParameters: ModelParameter[] = (mode === 'image'
+    ? selectedImageModel?.parameters
+    : selectedVideoModel?.parameters) ?? []
+
   const applyForcedVideoSettings = useCallback(
-    (next: { model: string; duration: number; videoResolution: string; fps: number; audio: boolean; aspectRatio: string; imageResolution: string; imageSteps: number; variations: number }) => {
+    (next: Record<string, any>) => {
       if (!shouldVideoGenerateWithLtxApi || mode !== 'video') return next
-      return sanitizeForcedApiVideoSettings(next, { hasAudio: !!inputAudio })
+      return sanitizeForcedApiVideoSettings(next as any, { hasAudio: !!inputAudio })
     },
     [inputAudio, mode, shouldVideoGenerateWithLtxApi],
   )
+
+  const handleProfileChange = useCallback((profileId: string | undefined) => {
+    setSelectedProfileId(profileId)
+    setModelParamOverrides({})
+    if (!profileId) return
+    const profile = availableProfiles.find((p) => p.id === profileId)
+    if (!profile) return
+    setSettings((prev: Record<string, any>) => {
+      const next = { ...prev }
+      if (prev.videoModelType && !profile.compatible_model_types.includes(prev.videoModelType)) {
+        const firstCompat = availableModels.video_models.find((m) => profile.compatible_model_types.includes(m.model_type))
+        next.videoModelType = firstCompat?.model_type ?? undefined
+      }
+      if (prev.imageModelType && !profile.compatible_model_types.includes(prev.imageModelType)) {
+        const firstCompat = availableModels.image_models.find((m) => profile.compatible_model_types.includes(m.model_type))
+        next.imageModelType = firstCompat?.model_type ?? undefined
+      }
+      return next
+    })
+  }, [availableProfiles, availableModels])
+
+  useEffect(() => {
+    setSelectedLoras((prev) => {
+      if (prev.length === 0) return prev
+      const available = new Set(availableLoras.map((l) => l.filename))
+      const filtered = prev.filter((s) => available.has(s.filename))
+      return filtered.length === prev.length ? prev : filtered
+    })
+  }, [availableLoras])
+
+  useEffect(() => {
+    setModelParamOverrides({})
+  }, [activeModelType])
+
+  useEffect(() => {
+    if (wangpRemoteEnabled || mode === 'image') return
+    const localResolutions = new Set(['1080p', '720p', '540p'])
+    setSettings((prev) => {
+      if (!localResolutions.has(prev.videoResolution)) {
+        return { ...prev, videoResolution: '1080p' }
+      }
+      return prev
+    })
+  }, [wangpRemoteEnabled, mode])
   
   const {
     generate,
@@ -1100,7 +1326,17 @@ export function GenSpace() {
     // Save the prompt before generation starts
     setLastPrompt(prompt)
 
+    const remoteExtras = wangpRemoteEnabled ? {
+      ...(selectedProfileId ? { profileId: selectedProfileId } : {}),
+      ...(selectedLoras.length > 0 ? { activatedLoras: selectedLoras } : {}),
+      ...(Object.keys(modelParamOverrides).length > 0 ? { modelParams: modelParamOverrides } : {}),
+    } : {}
+
     if (mode === 'image') {
+      const imageAssets = wangpRemoteEnabled && selectedImageModel?.capabilities?.supports_reference
+        ? imageAssetsHook.assets
+        : undefined
+
       generateImage(
         prompt,
         {
@@ -1114,15 +1350,18 @@ export function GenSpace() {
           imageAspectRatio: settings.aspectRatio,
           imageSteps: settings.imageSteps,
           variations: settings.variations,
-        }
+          ...(settings.imageModelType ? { imageModelType: settings.imageModelType } : {}),
+          ...remoteExtras,
+        },
+        imageAssets,
       )
     } else {
-      // Generate video (t2v if no image/audio, i2v if image, a2v if audio)
-      // Extract filesystem path from the file:// URL for the backend
       const imagePath = inputImage ? fileUrlToPath(inputImage) : null
       const audioPath = inputAudio ? fileUrlToPath(inputAudio) : null
       const videoSettings = applyForcedVideoSettings(settings)
       if (audioPath) videoSettings.model = 'pro'
+
+      const assets = wangpRemoteEnabled ? imageAssetsHook.assets : undefined
 
       generate(
         prompt,
@@ -1138,8 +1377,11 @@ export function GenSpace() {
           imageResolution: videoSettings.imageResolution,
           imageAspectRatio: videoSettings.aspectRatio,
           imageSteps: videoSettings.imageSteps,
+          ...(videoSettings.videoModelType ? { videoModelType: videoSettings.videoModelType } : {}),
+          ...remoteExtras,
         },
         audioPath,
+        assets,
       )
     }
   }
@@ -1400,6 +1642,35 @@ export function GenSpace() {
           settings={settings}
           onSettingsChange={(nextSettings) => setSettings(applyForcedVideoSettings(nextSettings))}
           shouldVideoGenerateWithLtxApi={shouldVideoGenerateWithLtxApi}
+          wangpRemoteEnabled={wangpRemoteEnabled}
+          videoModels={filteredVideoModels}
+          imageModels={filteredImageModels}
+          imageAssets={imageAssetsHook.assets}
+          onAddAsset={imageAssetsHook.addAsset}
+          onRemoveAsset={imageAssetsHook.removeAsset}
+          onRenameAsset={imageAssetsHook.renameAsset}
+          onChangeAssetRole={imageAssetsHook.changeRole}
+          selectedVideoModel={selectedVideoModel}
+          selectedImageModel={selectedImageModel}
+          profiles={availableProfiles}
+          selectedProfileId={selectedProfileId}
+          onProfileChange={handleProfileChange}
+          availableLoras={availableLoras}
+          lorasLoading={lorasLoading}
+          selectedLoras={selectedLoras}
+          onLorasChange={setSelectedLoras}
+          activeParameters={activeParameters}
+          modelParamOverrides={modelParamOverrides}
+          onModelParamChange={(key, value) => {
+            setModelParamOverrides((prev) => {
+              const param = activeParameters.find((p) => p.key === key)
+              if (param && value === param.default) {
+                const { [key]: _, ...rest } = prev
+                return rest
+              }
+              return { ...prev, [key]: value }
+            })
+          }}
         />
       </div>
       

@@ -3,7 +3,7 @@ import { useDropzone } from 'react-dropzone'
 import { Upload, Image as ImageIcon, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ImageAsset, ImageAssetRole } from '../types/image-assets'
-import type { VideoModel } from '../hooks/use-available-models'
+import type { VideoModel, ImageModel } from '../hooks/use-available-models'
 
 interface ImageAssetsPanelProps {
   assets: ImageAsset[]
@@ -12,34 +12,44 @@ interface ImageAssetsPanelProps {
   onRename: (id: string, name: string) => void
   onChangeRole: (id: string, role: ImageAssetRole) => void
   selectedVideoModel?: VideoModel | null
+  selectedImageModel?: ImageModel | null
+  generationMode?: 'video' | 'image'
   disabled?: boolean
 }
 
-function getAvailableRoles(model: VideoModel | null | undefined): ImageAssetRole[] {
-  const roles: ImageAssetRole[] = []
-
-  if (!model) {
-    return ['start_frame']
+function getAvailableRoles(
+  videoModel: VideoModel | null | undefined,
+  imageModel: ImageModel | null | undefined,
+  generationMode: 'video' | 'image',
+): ImageAssetRole[] {
+  if (generationMode === 'image') {
+    const caps = imageModel?.capabilities
+    if (!caps?.supports_reference) return ['start_frame']
+    const roles = caps.reference_roles ?? []
+    if (roles.length === 0) return ['start_frame']
+    const mapped: ImageAssetRole[] = []
+    for (const r of roles) {
+      if (r === 'character' || r === 'environment' || r === 'start_frame') {
+        mapped.push(r)
+      } else {
+        mapped.push('start_frame')
+      }
+    }
+    return mapped.length > 0 ? [...new Set(mapped)] : ['start_frame']
   }
 
+  const model = videoModel
+  if (!model) return ['start_frame']
+
+  const roles: ImageAssetRole[] = []
   const caps = model.capabilities
   const ipt = caps?.image_prompt_types_allowed ?? ''
   const refRoles = caps?.image_ref_roles ?? []
 
-  if (ipt.includes('S')) {
-    roles.push('start_frame')
-  }
-  if (refRoles.includes('character')) {
-    roles.push('character')
-  }
-  if (refRoles.includes('environment')) {
-    roles.push('environment')
-  }
-
-  if (roles.length === 0) {
-    roles.push('start_frame')
-  }
-
+  if (ipt.includes('S')) roles.push('start_frame')
+  if (refRoles.includes('character')) roles.push('character')
+  if (refRoles.includes('environment')) roles.push('environment')
+  if (roles.length === 0) roles.push('start_frame')
   return roles
 }
 
@@ -69,9 +79,11 @@ export function ImageAssetsPanel({
   onRename,
   onChangeRole,
   selectedVideoModel,
+  selectedImageModel,
+  generationMode = 'video',
   disabled,
 }: ImageAssetsPanelProps) {
-  const availableRoles = getAvailableRoles(selectedVideoModel)
+  const availableRoles = getAvailableRoles(selectedVideoModel, selectedImageModel, generationMode)
 
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {

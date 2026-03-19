@@ -81,6 +81,45 @@ class RemoteWanGPClient:
             logger.warning("Failed to fetch models from remote: %s", exc)
         return dict(self._DEFAULT_MODELS)
 
+    def get_profiles(self) -> list[dict[str, Any]]:
+        try:
+            resp = self._client.get("/api/profiles")
+            resp.raise_for_status()
+            data = resp.json()
+            if isinstance(data, list):
+                return data
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                logger.info("Remote server does not support /api/profiles, using fallback")
+            else:
+                logger.warning("Failed to fetch profiles from remote: %s", exc)
+        except Exception as exc:
+            logger.warning("Failed to fetch profiles from remote: %s", exc)
+
+        models = self.get_available_models()
+        all_types = [m["model_type"] for m in models.get("video_models", [])] + \
+                    [m["model_type"] for m in models.get("image_models", [])]
+        return [{"id": "default", "name": "Default", "vram_gb": 0, "compatible_model_types": all_types}]
+
+    def get_loras(self, model_type: str | None = None) -> list[dict[str, Any]]:
+        try:
+            params = {}
+            if model_type:
+                params["model_type"] = model_type
+            resp = self._client.get("/api/loras", params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            if isinstance(data, list):
+                return data
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                logger.info("Remote server does not support /api/loras")
+            else:
+                logger.warning("Failed to fetch LoRAs from remote: %s", exc)
+        except Exception as exc:
+            logger.warning("Failed to fetch LoRAs from remote: %s", exc)
+        return []
+
     def get_status(self) -> RemoteWanGPStatus:
         try:
             resp = self._client.get("/api/health")

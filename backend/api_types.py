@@ -262,6 +262,10 @@ class GenerateVideoRequest(BaseModel):
     aspectRatio: Literal["16:9", "9:16"] = "16:9"
     videoModelType: str | None = None
     imageAssets: list[ImageAsset] | None = None
+    activatedLoras: list[str] | None = None
+    lorasMultipliers: str | None = None
+    profileId: str | None = None
+    modelParams: dict | None = None
 
 
 class GenerateImageRequest(BaseModel):
@@ -271,6 +275,11 @@ class GenerateImageRequest(BaseModel):
     numSteps: int = 4
     numImages: int = 1
     imageModelType: str | None = None
+    imageAssets: list[ImageAsset] | None = None
+    activatedLoras: list[str] | None = None
+    lorasMultipliers: str | None = None
+    profileId: str | None = None
+    modelParams: dict | None = None
 
 
 class ModelDownloadRequest(BaseModel):

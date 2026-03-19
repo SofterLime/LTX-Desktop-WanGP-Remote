@@ -27,7 +27,7 @@ interface GenerationProgress {
 
 interface UseGenerationReturn extends GenerationState {
   generate: (prompt: string, imagePath: string | null, settings: GenerationSettings, audioPath?: string | null, imageAssets?: ImageAsset[]) => Promise<void>
-  generateImage: (prompt: string, settings: GenerationSettings) => Promise<void>
+  generateImage: (prompt: string, settings: GenerationSettings, imageAssets?: ImageAsset[]) => Promise<void>
   cancel: () => void
   reset: () => void
 }
@@ -173,6 +173,16 @@ export function useGeneration(): UseGenerationReturn {
           path: a.filePath,
         }))
       }
+      if (settings.activatedLoras && settings.activatedLoras.length > 0) {
+        body.activatedLoras = settings.activatedLoras.map((l) => l.filename)
+        body.lorasMultipliers = settings.activatedLoras.map((l) => l.schedule || String(l.strength)).join(',')
+      }
+      if (settings.profileId) {
+        body.profileId = settings.profileId
+      }
+      if (settings.modelParams && Object.keys(settings.modelParams).length > 0) {
+        body.modelParams = settings.modelParams
+      }
 
       // Poll for real progress from backend with time-based interpolation
       let lastPhase = ''
@@ -313,7 +323,8 @@ export function useGeneration(): UseGenerationReturn {
 
   const generateImage = useCallback(async (
     prompt: string,
-    settings: GenerationSettings
+    settings: GenerationSettings,
+    imageAssets?: ImageAsset[],
   ) => {
     if (forceApiGenerations) {
       try {
@@ -408,6 +419,23 @@ export function useGeneration(): UseGenerationReturn {
       }
       if (settings.imageModelType) {
         imageBody.imageModelType = settings.imageModelType
+      }
+      if (imageAssets && imageAssets.length > 0) {
+        imageBody.imageAssets = imageAssets.map((a) => ({
+          name: a.name,
+          role: a.role,
+          path: a.filePath,
+        }))
+      }
+      if (settings.activatedLoras && settings.activatedLoras.length > 0) {
+        imageBody.activatedLoras = settings.activatedLoras.map((l) => l.filename)
+        imageBody.lorasMultipliers = settings.activatedLoras.map((l) => l.schedule || String(l.strength)).join(',')
+      }
+      if (settings.profileId) {
+        imageBody.profileId = settings.profileId
+      }
+      if (settings.modelParams && Object.keys(settings.modelParams).length > 0) {
+        imageBody.modelParams = settings.modelParams
       }
 
       const response = await backendFetch('/api/generate-image', {

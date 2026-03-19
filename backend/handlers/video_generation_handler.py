@@ -698,6 +698,16 @@ class VideoGenerationHandler(StateHandlerBase):
                 settings["audio_prompt_type"] = "A"
                 settings["audio_guide"] = validated_audio_path
 
+            if req.activatedLoras:
+                settings["activated_loras"] = req.activatedLoras
+            if req.lorasMultipliers:
+                settings["loras_multipliers"] = req.lorasMultipliers
+            if req.profileId:
+                settings["override_profile"] = req.profileId
+            if req.modelParams:
+                for k, v in req.modelParams.items():
+                    settings[k] = v
+
             assert self._remote_wangp_client is not None
             result = self._remote_wangp_client.generate_video(
                 settings=settings,

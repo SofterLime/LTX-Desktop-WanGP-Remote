@@ -7,6 +7,7 @@ import {
   sanitizeForcedApiVideoSettings,
 } from '../lib/api-video-options'
 import type { VideoModel, ImageModel } from '../hooks/use-available-models'
+import type { PerformanceProfile, SelectedLora } from '../types/remote-models'
 
 export interface GenerationSettings {
   model: 'fast' | 'pro'
@@ -24,6 +25,10 @@ export interface GenerationSettings {
   // Remote WanGP model selection
   videoModelType?: string
   imageModelType?: string
+  // Remote WanGP extended settings
+  profileId?: string
+  activatedLoras?: SelectedLora[]
+  modelParams?: Record<string, unknown>
 }
 
 interface SettingsPanelProps {
@@ -36,6 +41,9 @@ interface SettingsPanelProps {
   wangpRemoteEnabled?: boolean
   videoModels?: VideoModel[]
   imageModels?: ImageModel[]
+  profiles?: PerformanceProfile[]
+  selectedProfileId?: string
+  onProfileChange?: (profileId: string | undefined) => void
 }
 
 const REMOTE_WANGP_VIDEO_RESOLUTIONS = ['2160p', '1440p', '1080p', '720p', '540p'] as const
@@ -51,6 +59,9 @@ export function SettingsPanel({
   wangpRemoteEnabled = false,
   videoModels = [],
   imageModels = [],
+  profiles = [],
+  selectedProfileId,
+  onProfileChange,
 }: SettingsPanelProps) {
   const isImageMode = mode === 'text-to-image'
   const LOCAL_MAX_DURATION: Record<string, number> = { '540p': 20, '720p': 10, '1080p': 5 }
@@ -88,6 +99,22 @@ export function SettingsPanel({
   if (isImageMode) {
     return (
       <div className="space-y-4">
+        {wangpRemoteEnabled && profiles.length > 0 && onProfileChange && (
+          <Select
+            label="GPU Profile"
+            value={selectedProfileId || ''}
+            onChange={(e) => onProfileChange(e.target.value || undefined)}
+            disabled={disabled}
+          >
+            <option value="">All Models</option>
+            {profiles.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}{p.vram_gb > 0 ? ` (${p.vram_gb}GB)` : ''}
+              </option>
+            ))}
+          </Select>
+        )}
+
         {wangpRemoteEnabled && imageModels.length > 0 && (
           <Select
             label="Image Model"
@@ -135,6 +162,23 @@ export function SettingsPanel({
   // Video mode settings
   return (
     <div className="space-y-4">
+      {/* GPU Profile */}
+      {wangpRemoteEnabled && profiles.length > 0 && onProfileChange && (
+        <Select
+          label="GPU Profile"
+          value={selectedProfileId || ''}
+          onChange={(e) => onProfileChange(e.target.value || undefined)}
+          disabled={disabled}
+        >
+          <option value="">All Models</option>
+          {profiles.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}{p.vram_gb > 0 ? ` (${p.vram_gb}GB)` : ''}
+            </option>
+          ))}
+        </Select>
+      )}
+
       {/* Model Selection */}
       {!forceApiGenerations ? (
         <Select

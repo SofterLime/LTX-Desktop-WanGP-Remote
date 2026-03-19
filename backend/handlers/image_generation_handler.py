@@ -159,6 +159,25 @@ class ImageGenerationHandler(StateHandlerBase):
             if seed is not None:
                 settings["seed"] = seed
 
+            if req.activatedLoras:
+                settings["activated_loras"] = req.activatedLoras
+            if req.lorasMultipliers:
+                settings["loras_multipliers"] = req.lorasMultipliers
+            if req.profileId:
+                settings["override_profile"] = req.profileId
+            if req.modelParams:
+                for k, v in req.modelParams.items():
+                    settings[k] = v
+            if req.imageAssets:
+                for asset in req.imageAssets:
+                    if asset.role == "start_frame":
+                        settings["image_start"] = asset.path
+                    elif asset.role == "character":
+                        refs = settings.get("image_refs", [])
+                        if isinstance(refs, list):
+                            refs.append(asset.path)
+                        settings["image_refs"] = refs
+
             assert self._remote_wangp_client is not None
             result = self._remote_wangp_client.generate_images(
                 settings=settings,
